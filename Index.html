@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Streaming App with User Authentication</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f9f9f9;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+        .app-logo {
+            display: block;
+            margin: 0 auto 20px;
+            width: 100px;
+        }
+        .song {
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #fff;
+        }
+        .song img {
+            width: 100px;
+            height: 100px;
+        }
+        .metadata {
+            display: none;
+            margin-top: 10px;
+        }
+        .search, .auth {
+            margin-bottom: 20px;
+        }
+        .hidden {
+            display: none;
+        }
+        button {
+            margin-top: 10px;
+            cursor: pointer;
+        }
+        .icon {
+            width: 20px;
+            height: 20px;
+            vertical-align: middle;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Music Streaming App</h1>
+<img src="https://via.placeholder.com/100" alt="App Logo" class="app-logo">
+
+<div id="authSection" class="auth">
+    <h2>Sign Up</h2>
+    <input type="email" id="email" placeholder="Email" required>
+    <input type="password" id="password" placeholder="Password" required>
+    <button onclick="signup()">
+        <img src="https://via.placeholder.com/20" class="icon" alt="Sign Up Icon">Sign Up
+    </button>
+    <button onclick="toggleLoginForm()">
+        <img src="https://via.placeholder.com/20" class="icon" alt="Switch Icon">Switch to Login
+    </button>
+</div>
+
+<div id="loginSection" class="auth hidden">
+    <h2>Login</h2>
+    <input type="email" id="loginEmail" placeholder="Email" required>
+    <input type="password" id="loginPassword" placeholder="Password" required>
+    <button onclick="login()">
+        <img src="https://via.placeholder.com/20" class="icon" alt="Login Icon">Login
+    </button>
+    <button onclick="toggleLoginForm()">
+        <img src="https://via.placeholder.com/20" class="icon" alt="Switch Icon">Switch to Sign Up
+    </button>
+</div>
+
+<div class="search">
+    <input type="text" id="searchInput" placeholder="Search by title, artist, or genre">
+    <button onclick="searchSongs()">
+        <img src="https://via.placeholder.com/20" class="icon" alt="Search Icon">Search
+    </button>
+</div>
+
+<h2>Upload Music</h2>
+<div id="uploadSection" class="hidden">
+    <input type="file" id="musicFile" accept="audio/*">
+    <input type="file" id="coverArt" accept="image/*">
+    <button onclick="showMetadata()">
+        <img src="https://via.placeholder.com/20" class="icon" alt="Show Metadata Icon">Show Metadata
+    </button>
+    <div id="metadataInputs" style="display: none;">
+        <input type="text" id="songTitle" placeholder="Song Title">
+        <input type="text" id="artistName" placeholder="Artist Name">
+        <input type="text" id="genre" placeholder="Genre">
+        <button onclick="uploadSong()">
+            <img src="https://via.placeholder.com/20" class="icon" alt="Upload Icon">Upload
+        </button>
+    </div>
+</div>
+
+<div id="songList"></div>
+
+<script>
+    let db;
+    let currentUser = null; // Track logged-in user
+
+    // Open (or create) the database
+    const request = indexedDB.open("MusicDB", 1);
+
+    request.onerror = function(event) {
+        console.error("Database error:", event.target.error);
+    };
+
+    request.onupgradeneeded = function(event) {
+        db = event.target.result;
+        const songStore = db.createObjectStore("songs", { keyPath: "id", autoIncrement: true });
+        const userStore = db.createObjectStore("users", { keyPath: "email" });
+    };
+
+    request.onsuccess = function(event) {
+        db = event.target.result;
+        displaySongs(); // Load songs from DB on successful open
+    };
+
+    function toggleLoginForm() {
+        document.getElementById('authSection').classList.toggle('hidden');
+        document.getElementById('loginSection').classList.toggle('hidden');
+    }
+
+    function signup() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        const transaction = db.transaction(["users"], "readwrite");
+        const store = transaction.objectStore("users");
+        
+        const request = store.add({ email: email, password: password });
+
+        request.onsuccess = function() {
+            alert("Signup successful!");
+            toggleLoginForm(); // Switch to login after successful signup
+        };
+
+        request.onerror = function(event) {
+            alert("Signup failed. User may already exist.");
+            console.error("Signup error:", event.target.error);
+        };
+    }
+
+    function login() {
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+
+        const transaction = db.transaction(["users"], "readonly");
+        const store = transaction.objectStore("users");
+        
+        const request = store.get(email);
+
+        request.onsuccess = function(event) {
+            const user = event.target.result;
+            if (user && user.password === password) {
+                alert("Login successful!");
+                currentUser = user.email; // Set current user
+                document.getElementById("uploadSection").classList.remove("hidden"); // Show upload section
+                displaySongs();
+            } else {
+                alert("Login failed. Check your email and password.");
+            }
+        };
+
+        request.onerror = function(event) {
+            console.error("Login error:", event.target.error);
+        };
+    }
+
+    function showMetadata() {
+        const metadataInputs = document.getElementById('metadataInputs');
+        metadataInputs.style.display = metadataInputs.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function uploadSong() {
+        if (!currentUser) {
+            alert("Please log in to upload songs.");
+            return;
+        }
+
+        const musicFile = document.getElementById('musicFile').files[0];
+        const coverArt = document.getElementById('coverArt').files[0];
+        const songTitle = document.getElementById('songTitle').value;
+        const artistName = document.getElementById('artistName').value;
+        const genre = document.getElementById('genre').value;
+
+        if (!musicFile || !coverArt || !songTitle || !artistName || !genre) {
+            alert('Please fill all fields and upload files.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const song = {
+                title: songTitle,
+                artist: artistName,
+                genre: genre,
+                musicSrc: event.target.result,
+                coverSrc: URL.createObjectURL(coverArt),
+            };
+
+            const transaction = db.transaction(["songs"], "readwrite");
+            const store = transaction.objectStore("songs");
+            store.add(song);
+
+            transaction.oncomplete = function() {
+                displaySongs();
+                clearInputs();
+            };
+
+            transaction.onerror = function(event) {
+                console.error("Transaction error:", event.target.error);
+            };
+        };
+        reader.readAsDataURL(musicFile);
+    }
+
+    function clearInputs() {
+        document.getElementById('musicFile').value = '';
+        document.getElementById('coverArt').value = '';
+        document.getElementById('songTitle').value = '';
+        document.getElementById('artistName').value = '';
+        document.getElementById('genre').value = '';
+        document.getElementById('metadataInputs').style.display = 'none';
+    }
+
+    function displaySongs() {
+        const songList = document.getElementById('songList');
+        songList.innerHTML = '';
+
+        const transaction = db.transaction(["songs"], "readonly");
+        const store = transaction.objectStore("songs");
+        const request = store.getAll();
+
+        request.onsuccess = function(event) {
+            const songs = event.target.result;
+            songs.forEach((song) => {
+                const songDiv = document.createElement('div');
+                songDiv.className = 'song';
+                songDiv.innerHTML = `
+                    <img src="${song.coverSrc}" alt="Cover Art">
+                    <h3>${song.title}</h3>
+                    <audio controls>
+                        <source src="${song.musicSrc}" type="audio/mpeg">
+                        Your browser does not support the audio tag.
+                    </audio>
+                    <button onclick="toggleMetadata(${song.id})">
+                        <img src="https://via.placeholder.com/20" class="icon" alt="Toggle Metadata Icon">Toggle Metadata
+                    </button>
+                    <div class="metadata" id="metadata-${song.id}">
+                        <p>Artist: ${song.artist}</p>
+                        <p>Genre: ${song.genre}</p>
+                    </div>
+                    <button onclick="editSong(${song.id})">
+                        <img src="https://via.placeholder.com/20" class="icon" alt="Edit Icon">Edit
+                    </button>
+                    <button onclick="deleteSong(${song.id})">
+                        <img src="https://via.placeholder.com/20" class="icon" alt="Delete Icon">Delete
+                    </button>
+                `;
+                songList.appendChild(songDiv);
+            });
+        };
+    }
+
+    function toggleMetadata(id) {
+        const metadataDiv = document.getElementById(`metadata-${id}`);
+        metadataDiv.style.display = metadataDiv.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function deleteSong(id) {
+        const transaction = db.transaction(["songs"], "readwrite");
+        const store = transaction.objectStore("songs");
+        store.delete(id);
+        
+        transaction.oncomplete = function() {
+            displaySongs();
+        };
+
+        transaction.onerror = function(event) {
+            console.error("Transaction error:", event.target.error);
+        };
+    }
+
+    function editSong(id) {
+        const transaction = db.transaction(["songs"], "readonly");
+        const store = transaction.objectStore("songs");
+        const request = store.get(id);
+
+        request.onsuccess = function(event) {
+            const song = event.target.result;
+            document.getElementById('musicFile').value = '';
+            document.getElementById('coverArt').value = '';
+            document.getElementById('songTitle').value = song.title;
+            document.getElementById('artistName').value = song.artist;
+            document.getElementById('genre').value = song.genre;
+
+            deleteSong(id); // Remove the song so it can be re-uploaded
+        };
+    }
+
+    function searchSongs() {
+        const searchInput = document.getElementById('searchInput').value.toLowerCase();
+        const songList = document.getElementById('songList');
+        songList.innerHTML = '';
+
+        const transaction = db.transaction(["songs"], "readonly");
+        const store = transaction.objectStore("songs");
+        const request = store.getAll();
+
+        request.onsuccess = function(event) {
+            const songs = event.target.result;
+            const filteredSongs = songs.filter(song =>
+                song.title.toLowerCase().includes(searchInput) ||
+                song.artist.toLowerCase().includes(searchInput) ||
+                song.genre.toLowerCase().includes(searchInput)
+            );
+
+            filteredSongs.forEach((song) => {
+                const songDiv = document.createElement('div');
+                songDiv.className = 'song';
+                songDiv.innerHTML = `
+                    <img src="${song.coverSrc}" alt="Cover Art">
+                    <h3>${song.title}</h3>
+                    <audio controls>
+                        <source src="${song.musicSrc}" type="audio/mpeg">
+                        Your browser does not support the audio tag.
+                    </audio>
+                    <button onclick="toggleMetadata(${song.id})">
+                        <img src="https://via.placeholder.com/20" class="icon" alt="Toggle Metadata Icon">Toggle Metadata
+                    </button>
+                    <div class="metadata" id="metadata-${song.id}">
+                        <p>Artist: ${song.artist}</p>
+                        <p>Genre: ${song.genre}</p>
+                    </div>
+                    <button onclick="editSong(${song.id})">
+                        <img src="https://via.placeholder.com/20" class="icon" alt="Edit Icon">Edit
+                    </button>
+                    <button onclick="deleteSong(${song.id})">
+                        <img src="https://via.placeholder.com/20" class="icon" alt="Delete Icon">Delete
+                    </button>
+                `;
+                songList.appendChild(songDiv);
+            });
+        };
+    }
+</script>
+
+</body>
+</html>
